@@ -21,7 +21,7 @@ This feature was originally implemented in [EpiLink](https://github.com/EpiLink/
 into its own thing. `ktor-rate-limit`'s original code was under the MPL2 (no copyleft exception), but is available under
 the Apache 2.0 license in this repository.
 
-## Usage
+## Documentation
 
-Read the `RateLimit` feature's KDoc for more information on how to use this library. Proper documentation will be added
-later.
+Documentation is on zgdocs [here](https://docs.zoroark.guru/#/ktor-rate-limit/). You can also check the KDoc comments,
+which have a lot of information.
