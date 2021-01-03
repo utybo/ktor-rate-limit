@@ -15,7 +15,10 @@
  */
 package guru.zoroark.ratelimit
 
+import io.ktor.application.ApplicationCall
+import io.ktor.features.origin
 import org.slf4j.Logger
+import java.net.Inet6Address
 
 /**
  * Utility function for logging a lazily-constructed debug message.
@@ -24,4 +27,20 @@ internal inline fun Logger.debug(lazyMsg: () -> String) {
     if (this.isDebugEnabled) {
         debug(lazyMsg())
     }
+}
+
+/**
+ * The default caller key producer.
+ */
+fun ApplicationCall.defaultCallerKeyProducer(): ByteArray {
+    val host = request.origin.remoteHost
+    // Try parsing this as an IPV6 address.
+    runCatching {
+        Inet6Address.getByName("[$host]")
+    }.onSuccess {
+        // This is an IPv6 address: only take the first 64 bits (8 bytes)
+        // as the caller key
+        return it.address.copyOf(8)
+    }
+    return host.toByteArray()
 }
