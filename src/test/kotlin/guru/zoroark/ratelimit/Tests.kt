@@ -18,6 +18,8 @@ package guru.zoroark.ratelimit
 import io.ktor.application.ApplicationCall
 import io.ktor.application.call
 import io.ktor.application.install
+import io.ktor.features.XForwardedHeaderSupport
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.response.respond
@@ -29,10 +31,7 @@ import io.ktor.server.testing.withTestApplication
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.ceil
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class RateLimitTest {
     @Test
@@ -63,154 +62,169 @@ class RateLimitTest {
         handleRequest(HttpMethod.Get, "/").apply {
             assertStatus(HttpStatusCode.TooManyRequests)
             assertRateLimitedHeaders(5, 0, max)
-            assertEquals(response.headers["X-RateLimit-Reset-After"]!!, response.headers["Retry-After"])
+            assertEquals(
+                response.headers["X-RateLimit-Reset-After"]!!,
+                response.headers["Retry-After"]
+            )
         }
     }
 
     @Test
-    fun `Different buckets have different counters`(): Unit = withTestApplication {
-        val resetDur = Duration.ofMinutes(1)
-        var useMe = "One"
-        with(application) {
-            install(RateLimit) {
-                limit = 5
-                timeBeforeReset = resetDur
-                callerKeyProducer = {
-                    useMe.toByteArray()
+    fun `Different buckets have different counters`(): Unit =
+        withTestApplication {
+            val resetDur = Duration.ofMinutes(1)
+            var useMe = "One"
+            with(application) {
+                install(RateLimit) {
+                    limit = 5
+                    timeBeforeReset = resetDur
+                    callerKeyProducer = {
+                        useMe.toByteArray()
+                    }
                 }
-            }
-            routing {
-                rateLimited {
-                    get("/") {
-                        call.respond(HttpStatusCode.OK)
+                routing {
+                    rateLimited {
+                        get("/") {
+                            call.respond(HttpStatusCode.OK)
+                        }
                     }
                 }
             }
-        }
-        // Add a second to account for possible lag or delays
-        val max = Instant.now() + resetDur + Duration.ofSeconds(1)
+            // Add a second to account for possible lag or delays
+            val max = Instant.now() + resetDur + Duration.ofSeconds(1)
 
-        // Simulate first client
-        repeat(4) { iteration ->
+            // Simulate first client
+            repeat(4) { iteration ->
+                handleRequest(HttpMethod.Get, "/").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                    assertStatus(HttpStatusCode.OK)
+                }
+            }
+            // Simulate second client
+            useMe = "Two"
+            repeat(3) { iteration ->
+                handleRequest(HttpMethod.Get, "/").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                }
+            }
+            // Simulate first client, whose bucket should not have expired
+            useMe = "One"
             handleRequest(HttpMethod.Get, "/").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+                assertRateLimitedHeaders(5, 0L, max)
                 assertStatus(HttpStatusCode.OK)
             }
-        }
-        // Simulate second client
-        useMe = "Two"
-        repeat(3) { iteration ->
             handleRequest(HttpMethod.Get, "/").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+                assertStatus(HttpStatusCode.TooManyRequests)
+                assertRateLimitedHeaders(5, 0, max)
+                assertEquals(
+                    response.headers["X-RateLimit-Reset-After"]!!,
+                    response.headers["Retry-After"]
+                )
             }
         }
-        // Simulate first client, whose bucket should not have expired
-        useMe = "One"
-        handleRequest(HttpMethod.Get, "/").apply {
-            assertRateLimitedHeaders(5, 0L, max)
-            assertStatus(HttpStatusCode.OK)
-        }
-        handleRequest(HttpMethod.Get, "/").apply {
-            assertStatus(HttpStatusCode.TooManyRequests)
-            assertRateLimitedHeaders(5, 0, max)
-            assertEquals(response.headers["X-RateLimit-Reset-After"]!!, response.headers["Retry-After"])
-        }
-    }
 
     @Test
-    fun `Different routes have different counters`(): Unit = withTestApplication {
-        val resetDur = Duration.ofMinutes(1)
-        with(application) {
-            install(RateLimit) {
-                limit = 5
-                timeBeforeReset = resetDur
-            }
-            routing {
-                rateLimited {
-                    get("/one") {
-                        call.respond(HttpStatusCode.OK)
+    fun `Different routes have different counters`(): Unit =
+        withTestApplication {
+            val resetDur = Duration.ofMinutes(1)
+            with(application) {
+                install(RateLimit) {
+                    limit = 5
+                    timeBeforeReset = resetDur
+                }
+                routing {
+                    rateLimited {
+                        get("/one") {
+                            call.respond(HttpStatusCode.OK)
+                        }
+                    }
+                    rateLimited {
+                        get("/two") {
+                            call.respond(HttpStatusCode.OK)
+                        }
                     }
                 }
-                rateLimited {
-                    get("/two") {
-                        call.respond(HttpStatusCode.OK)
-                    }
-                }
             }
-        }
-        // Add a second to account for possible lag or delays
-        val max = Instant.now() + resetDur + Duration.ofSeconds(1)
+            // Add a second to account for possible lag or delays
+            val max = Instant.now() + resetDur + Duration.ofSeconds(1)
 
-        // Simulate first route
-        repeat(4) { iteration ->
+            // Simulate first route
+            repeat(4) { iteration ->
+                handleRequest(HttpMethod.Get, "/one").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                    assertStatus(HttpStatusCode.OK)
+                }
+            }
+            // Simulate second route
+            repeat(3) { iteration ->
+                handleRequest(HttpMethod.Get, "/two").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                }
+            }
+            // Simulate second route, whose bucket should not have expired
             handleRequest(HttpMethod.Get, "/one").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+                assertRateLimitedHeaders(5, 0L, max)
                 assertStatus(HttpStatusCode.OK)
             }
-        }
-        // Simulate second route
-        repeat(3) { iteration ->
-            handleRequest(HttpMethod.Get, "/two").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+            handleRequest(HttpMethod.Get, "/one").apply {
+                assertStatus(HttpStatusCode.TooManyRequests)
+                assertRateLimitedHeaders(5, 0, max)
+                assertEquals(
+                    response.headers["X-RateLimit-Reset-After"]!!,
+                    response.headers["Retry-After"]
+                )
             }
         }
-        // Simulate second route, whose bucket should not have expired
-        handleRequest(HttpMethod.Get, "/one").apply {
-            assertRateLimitedHeaders(5, 0L, max)
-            assertStatus(HttpStatusCode.OK)
-        }
-        handleRequest(HttpMethod.Get, "/one").apply {
-            assertStatus(HttpStatusCode.TooManyRequests)
-            assertRateLimitedHeaders(5, 0, max)
-            assertEquals(response.headers["X-RateLimit-Reset-After"]!!, response.headers["Retry-After"])
-        }
-    }
 
     @Test
-    fun `Different additional key have different counters`(): Unit = withTestApplication {
-        val resetDur = Duration.ofMinutes(1)
-        with(application) {
-            install(RateLimit) {
-                limit = 5
-                timeBeforeReset = resetDur
-            }
-            routing {
-                rateLimited(additionalKeyExtractor = {
-                    parameters["id"]!!
-                }) {
-                    get("/{id}") {
-                        call.respond(HttpStatusCode.OK)
+    fun `Different additional key have different counters`(): Unit =
+        withTestApplication {
+            val resetDur = Duration.ofMinutes(1)
+            with(application) {
+                install(RateLimit) {
+                    limit = 5
+                    timeBeforeReset = resetDur
+                }
+                routing {
+                    rateLimited(additionalKeyExtractor = {
+                        parameters["id"]!!
+                    }) {
+                        get("/{id}") {
+                            call.respond(HttpStatusCode.OK)
+                        }
                     }
                 }
             }
-        }
-        // Add a second to account for possible lag or delays
-        val max = Instant.now() + resetDur + Duration.ofSeconds(1)
+            // Add a second to account for possible lag or delays
+            val max = Instant.now() + resetDur + Duration.ofSeconds(1)
 
-        // Simulate first key
-        repeat(4) { iteration ->
+            // Simulate first key
+            repeat(4) { iteration ->
+                handleRequest(HttpMethod.Get, "/one").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                    assertStatus(HttpStatusCode.OK)
+                }
+            }
+            // Simulate second key
+            repeat(3) { iteration ->
+                handleRequest(HttpMethod.Get, "/two").apply {
+                    assertRateLimitedHeaders(5, 4L - iteration, max)
+                }
+            }
+            // Simulate second key, whose bucket should not have expired
             handleRequest(HttpMethod.Get, "/one").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+                assertRateLimitedHeaders(5, 0L, max)
                 assertStatus(HttpStatusCode.OK)
             }
-        }
-        // Simulate second key
-        repeat(3) { iteration ->
-            handleRequest(HttpMethod.Get, "/two").apply {
-                assertRateLimitedHeaders(5, 4L - iteration, max)
+            handleRequest(HttpMethod.Get, "/one").apply {
+                assertStatus(HttpStatusCode.TooManyRequests)
+                assertRateLimitedHeaders(5, 0, max)
+                assertEquals(
+                    response.headers["X-RateLimit-Reset-After"]!!,
+                    response.headers["Retry-After"]
+                )
             }
         }
-        // Simulate second key, whose bucket should not have expired
-        handleRequest(HttpMethod.Get, "/one").apply {
-            assertRateLimitedHeaders(5, 0L, max)
-            assertStatus(HttpStatusCode.OK)
-        }
-        handleRequest(HttpMethod.Get, "/one").apply {
-            assertStatus(HttpStatusCode.TooManyRequests)
-            assertRateLimitedHeaders(5, 0, max)
-            assertEquals(response.headers["X-RateLimit-Reset-After"]!!, response.headers["Retry-After"])
-        }
-    }
 
     @Test
     fun `Rate limit expires`(): Unit = withTestApplication {
@@ -290,6 +304,75 @@ class RateLimitTest {
         Thread.sleep(1000) // Wait for the purge to happen, it runs in the background
     }
     */
+
+    @Test
+    fun `Test rate limiting same header on IPv6 same network prefix`() {
+        withTestApplication {
+            with(application) {
+                install(RateLimit)
+                routing {
+                    rateLimited {
+                        get("/") {
+                            call.respond(HttpStatusCode.OK)
+                        }
+                    }
+                }
+
+                install(XForwardedHeaderSupport)
+            }
+            val response1 = handleRequest(HttpMethod.Get, "/") {
+                addHeader(
+                    HttpHeaders.XForwardedFor,
+                    "1c68:5440:2594:c1e6:bfdd:8b97:e61d:b2ff"
+                )
+            }
+            val response2 = handleRequest(HttpMethod.Get, "/") {
+                addHeader(
+                    HttpHeaders.XForwardedFor,
+                    "1c68:5440:2594:c1e6:efc5:7a53:7135:41f"
+                )
+            }
+            assertEquals(
+                response1.response.headers["X-RateLimit-Bucket"],
+                response2.response.headers["X-RateLimit-Bucket"]
+            )
+        }
+    }
+
+
+    @Test
+    fun `Test rate limiting same header on IPv6 different network prefix`() {
+        withTestApplication {
+            with(application) {
+                install(RateLimit)
+                routing {
+                    rateLimited {
+                        get("/") {
+                            call.respond(HttpStatusCode.OK)
+                        }
+                    }
+                }
+
+                install(XForwardedHeaderSupport)
+            }
+            val response1 = handleRequest(HttpMethod.Get, "/") {
+                addHeader(
+                    HttpHeaders.XForwardedFor,
+                    "1c68:5440:2594:c1e6:bfdd:8b97:e61d:b2ff"
+                )
+            }
+            val response2 = handleRequest(HttpMethod.Get, "/") {
+                addHeader(
+                    HttpHeaders.XForwardedFor,
+                    "7e92:2075:327e:f32b:4341:97a2:1440:5a2f"
+                )
+            }
+            assertNotEquals(
+                response1.response.headers["X-RateLimit-Bucket"],
+                response2.response.headers["X-RateLimit-Bucket"]
+            )
+        }
+    }
 }
 
 /*
@@ -307,8 +390,14 @@ fun TestApplicationCall.assertRateLimitedHeaders(
         else
             Instant.ofEpochSecond(ceil(resetMax.toEpochMilli() / 1000.0).toLong())
 
-    assertEquals(expectedLimit.toString(), response.headers["X-RateLimit-Limit"])
-    assertEquals(expectedRemaining.toString(), response.headers["X-RateLimit-Remaining"])
+    assertEquals(
+        expectedLimit.toString(),
+        response.headers["X-RateLimit-Limit"]
+    )
+    assertEquals(
+        expectedRemaining.toString(),
+        response.headers["X-RateLimit-Remaining"]
+    )
     val resetAt =
         if (inMillis)
             Instant.ofEpochMilli((response.headers["X-RateLimit-Reset"]!!.toDouble() * 1000).toLong())
@@ -322,7 +411,8 @@ fun TestApplicationCall.assertRateLimitedHeaders(
             Duration.ofMillis((response.headers["X-RateLimit-Reset-After"]!!.toDouble() * 1000).toLong())
         else
             Duration.ofSeconds(response.headers["X-RateLimit-Reset-After"]!!.toLong())
-    val expectedResetAfterMillis = Duration.between(Instant.now(), actualResetMax).toMillis()
+    val expectedResetAfterMillis =
+        Duration.between(Instant.now(), actualResetMax).toMillis()
     val expectedResetAfter =
         if (inMillis)
             Duration.ofMillis(expectedResetAfterMillis)

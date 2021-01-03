@@ -178,7 +178,7 @@ class RateLimit(configuration: Configuration) {
          * remote host as the caller key.
          */
         var callerKeyProducer: ApplicationCall.() -> ByteArray = {
-            request.origin.remoteHost.toByteArray()
+            defaultCallerKeyProducer()
         }
     }
 
