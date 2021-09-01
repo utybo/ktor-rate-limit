@@ -20,7 +20,7 @@ import java.time.Instant
 /**
  * Represents a single rate limit state. Immutable.
  */
-data class Rate(
+public data class Rate(
     /**
      * The number of remaining requests + 1. So, if this is 1, then this is the last allowed request and the next
      * request will trigger a rate limit.
@@ -35,15 +35,15 @@ data class Rate(
 /**
  * Returns true if the rate has expired (we have passed its reset instant)
  */
-fun Rate.hasExpired() = resetAt < Instant.now()
+public fun Rate.hasExpired(): Boolean = resetAt < Instant.now()
 
 /**
  * Consumes a single request and returns the modified rate.
  */
-fun Rate.consume() = copy(remainingRequests = (remainingRequests - 1).coerceAtLeast(0))
+public fun Rate.consume(): Rate = copy(remainingRequests = (remainingRequests - 1).coerceAtLeast(0))
 
 /**
  * Returns true if the 429 HTTP error should be returned, as in, this rate has not expired and there are no remaining
  * requests
  */
-fun Rate.shouldLimit() = !hasExpired() && remainingRequests == 0L
+public fun Rate.shouldLimit(): Boolean = !hasExpired() && remainingRequests == 0L

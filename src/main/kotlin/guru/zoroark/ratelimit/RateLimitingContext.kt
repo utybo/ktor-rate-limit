@@ -21,7 +21,7 @@ import java.time.Instant
 /**
  * This context provides information useful for [RateLimiter]s that wish to create new [Rate] objects.
  */
-data class RateLimitingContext(
+public data class RateLimitingContext(
     /**
      * The limit, which is the maximum number amount of requests that can be made in the span of [resetTime]
      * milliseconds
@@ -36,5 +36,5 @@ data class RateLimitingContext(
 /**
  * Creates a new [Rate] object based on the current rate limiting context. Useful for creating brand new rates.
  */
-fun RateLimitingContext.newRate(): Rate =
+public fun RateLimitingContext.newRate(): Rate =
     Rate(limit, Instant.now() + Duration.ofMillis(resetTime))

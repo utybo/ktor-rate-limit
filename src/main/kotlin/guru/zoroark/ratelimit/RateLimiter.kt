@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * @param K The type of the key. The [RateLimit] feature uses String-based rate limiters
  */
-interface RateLimiter<K> {
+public interface RateLimiter<K> {
     /**
      * Handle a single call with the given key. Should return the resulting rate object.
      *
@@ -37,7 +37,7 @@ interface RateLimiter<K> {
      * @param ctx The context to use to get more information about rates
      * @return A [Rate] object representing the rate handled and whether the limit should happen or not
      */
-    suspend fun handle(ctx: RateLimitingContext, key: K): Rate
+    public suspend fun handle(ctx: RateLimitingContext, key: K): Rate
 }
 
 /**
@@ -49,7 +49,7 @@ interface RateLimiter<K> {
  * @param mapPurgeWaitDuration The amount of time to wait before the next
  * purging.
  */
-class InMemoryRateLimiter(
+public class InMemoryRateLimiter(
     private val mapPurgeSize: Int,
     private val mapPurgeWaitDuration: Duration
 ) : RateLimiter<String> {

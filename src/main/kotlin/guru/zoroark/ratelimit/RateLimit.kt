@@ -103,49 +103,49 @@ import kotlin.math.ceil
  *
  * Global rate limits are not implemented yet.
  */
-class RateLimit(configuration: Configuration) {
+public class RateLimit(configuration: Configuration) {
 
     /**
      * The (non-standard) headers used by the rate limiting features. The names
      * are identical to the ones used by Discord.
      */
-    object Headers {
+    public object Headers {
         /**
          * The number of requests that can be made
          */
-        const val Limit = "X-RateLimit-Limit"
+        public const val Limit: String = "X-RateLimit-Limit"
 
         /**
          * The number of remaining requests that can be made before the reset time.
          */
-        const val Remaining = "X-RateLimit-Remaining"
+        public const val Remaining: String = "X-RateLimit-Remaining"
 
         /**
          * The epoch time at which the rate limit resets
          */
-        const val Reset = "X-RateLimit-Reset"
+        public const val Reset: String = "X-RateLimit-Reset"
 
         /**
          * The total time in seconds (either integer or floating) of when the
          * current rate limit will reset
          */
-        const val ResetAfter = "X-RateLimit-Reset-After"
+        public const val ResetAfter: String = "X-RateLimit-Reset-After"
 
         /**
          * Header for precision (second or millisecond)
          */
-        const val Precision = "X-RateLimit-Precision"
+        public const val Precision: String = "X-RateLimit-Precision"
 
         /**
          * "Bucket" header
          */
-        const val Bucket = "X-RateLimit-Bucket"
+        public const val Bucket: String = "X-RateLimit-Bucket"
     }
 
     /**
      * Configuration class for the Rate Limiting feature
      */
-    class Configuration {
+    public class Configuration {
         /**
          * The limiter implementation. See [RateLimiter] for more information.
          *
@@ -154,7 +154,7 @@ class RateLimit(configuration: Configuration) {
          * Default: An [InMemoryRateLimiter] which needs 100 items stored to
          * purge itself (one purge per hour).
          */
-        var limiter: RateLimiter<String> =
+        public var limiter: RateLimiter<String> =
             InMemoryRateLimiter(100, Duration.ofHours(1))
 
         /**
@@ -163,7 +163,7 @@ class RateLimit(configuration: Configuration) {
          *
          * Default: 50 requests
          */
-        var limit: Long = 50L
+        public var limit: Long = 50L
 
         /**
          * The default amount of time before a rate limit is reset. Can be
@@ -171,13 +171,13 @@ class RateLimit(configuration: Configuration) {
          *
          * Default: 2 minutes
          */
-        var timeBeforeReset: Duration = Duration.ofMinutes(2)
+        public var timeBeforeReset: Duration = Duration.ofMinutes(2)
 
         /**
          * This is the function that generates caller keys. The default uses the
          * remote host as the caller key.
          */
-        var callerKeyProducer: ApplicationCall.() -> ByteArray = {
+        public var callerKeyProducer: ApplicationCall.() -> ByteArray = {
             request.origin.remoteHost.toByteArray()
         }
     }
@@ -192,9 +192,9 @@ class RateLimit(configuration: Configuration) {
     /**
      * Feature companion object for the rate limiting feature
      */
-    companion object Feature :
+    public companion object Feature :
         ApplicationFeature<ApplicationCallPipeline, Configuration, RateLimit> {
-        override val key = AttributeKey<RateLimit>("RateLimit")
+        override val key: AttributeKey<RateLimit> = AttributeKey("RateLimit")
 
         override fun install(
             pipeline: ApplicationCallPipeline,
@@ -277,14 +277,14 @@ class RateLimit(configuration: Configuration) {
  * key. See [RateLimit] for more information.
  * @param callback Block for configuring the rate-limited route
  */
-fun Route.rateLimited(
+public fun Route.rateLimited(
     limit: Long? = null,
     timeBeforeReset: Duration? = null,
     additionalKeyExtractor: ApplicationCall.() -> String = { "" },
     callback: Route.() -> Unit
 ): Route {
     // Create the route
-    val rateLimitedRoute = createChild(object : RouteSelector(1.0) {
+    val rateLimitedRoute = createChild(object : RouteSelector() {
         override fun evaluate(
             context: RoutingResolveContext,
             segmentIndex: Int
