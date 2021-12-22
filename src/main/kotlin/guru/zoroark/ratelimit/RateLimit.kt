@@ -252,7 +252,7 @@ public class RateLimit(configuration: Configuration) {
             response.header(HttpHeaders.RetryAfter, retryAfter)
             respondText(
                 ContentType.Application.Json,
-                HttpStatusCode.TooManyRequests
+                HttpStatusCode.OK
             ) {
 //                """{"message":"You are being rate limited.","retry_after":$retryAfter,"global":false}"""
                 limitMessage.replace("{{retryAfter}}", retryAfter)
