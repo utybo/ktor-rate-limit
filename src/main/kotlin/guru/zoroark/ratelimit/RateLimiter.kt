@@ -80,7 +80,7 @@ public class InMemoryRateLimiter(
         }
 
     private fun launchPurgeIfNeeded() {
-        logger.debug { "Should purge: ${shouldPurge()}" }
+//        logger.debug { "Should purge: ${shouldPurge()}" }
         if (shouldPurge() && mutex.tryLock()) {
             logger.debug { "Launching purge in coroutine scope" }
             scope.launch {
