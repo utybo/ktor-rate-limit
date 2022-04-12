@@ -14,17 +14,14 @@ repositories {
 }
 
 dependencies {
-    implementation platform("org.jetbrains.kotlin:kotlin-bom")
-
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    implementation "org.slf4j:slf4j-api:1.7.32"
-    implementation "io.ktor:ktor-server-core:1.6.3"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.1"
+    implementation 'org.slf4j:slf4j-api:1.7.36'
+    implementation "io.ktor:ktor-server-core:2.0.0"
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.1'
 
     testImplementation "org.jetbrains.kotlin:kotlin-test"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit5"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.2'
-    testImplementation "io.ktor:ktor-server-test-host:1.6.3"
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.8.2'
+    testImplementation "io.ktor:ktor-server-test-host:2.0.0"
 }
 
 test {

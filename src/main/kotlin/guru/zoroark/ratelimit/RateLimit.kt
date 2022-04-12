@@ -16,18 +16,13 @@
 package guru.zoroark.ratelimit
 
 import guru.zoroark.ratelimit.RateLimit.Configuration
-import io.ktor.application.*
-import io.ktor.features.*
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.request.ApplicationRequest
-import io.ktor.request.header
-import io.ktor.response.ApplicationResponse
-import io.ktor.response.header
-import io.ktor.response.respondText
-import io.ktor.routing.*
-import io.ktor.util.AttributeKey
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.plugins.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.util.*
 import io.ktor.util.pipeline.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -179,9 +174,10 @@ public class RateLimit(configuration: Configuration) {
         public var callerKeyProducer: ApplicationCall.() -> ByteArray = {
             request.origin.remoteHost.toByteArray()
         }
-        
-        public var limitMessage: String = """{"message":"You are being rate limited.","retry_after":{{retryAfter}},"global":false}"""
-        
+
+        public var limitMessage: String =
+            """{"message":"You are being rate limited.","retry_after":{{retryAfter}},"global":false}"""
+
         public var limitHttpStatusCode: HttpStatusCode = HttpStatusCode.TooManyRequests
         public var limitHttpContentType: ContentType = ContentType.Application.Json
     }
@@ -200,7 +196,7 @@ public class RateLimit(configuration: Configuration) {
      * Feature companion object for the rate limiting feature
      */
     public companion object Feature :
-        ApplicationFeature<ApplicationCallPipeline, Configuration, RateLimit> {
+        BaseApplicationPlugin<ApplicationCallPipeline, Configuration, RateLimit> {
         override val key: AttributeKey<RateLimit> = AttributeKey("RateLimit")
 
         override fun install(
@@ -227,12 +223,12 @@ public class RateLimit(configuration: Configuration) {
     ): Boolean = with(call) {
         // Initialize values
         var bucket = ""
-        if(fullKeyProcessor != null && context != null) {
+        if (fullKeyProcessor != null && context != null) {
             bucket = fullKeyProcessor(context.call.keyProducer())
         } else if (fullKey != null) {
             bucket = fullKey
         }
-        
+
         val actualLimit = limit ?: this@RateLimit.limit
         val actualTimeBeforeReset =
             timeBeforeReset ?: this@RateLimit.timeBeforeReset
@@ -313,13 +309,13 @@ public fun Route.rateLimited(
             RouteSelectorEvaluation.Constant
     })
     // Rate limiting feature object
-    val rateLimiting = application.feature(RateLimit)
+    val rateLimiting = application.plugin(RateLimit)
     // Generate a key for this route
     val arr = ByteArray(64)
     rateLimiting.random.nextBytes(arr)
     // Intercepting every call and checking the rate limit
-    rateLimitedRoute.intercept(ApplicationCallPipeline.Features) {
-        if(autoRateLimit) {
+    rateLimitedRoute.intercept(ApplicationCallPipeline.Plugins) {
+        if (autoRateLimit) {
             rateLimiting.handleRateLimitedCall(
                 limit,
                 timeBeforeReset?.toMillis(),
@@ -329,7 +325,10 @@ public fun Route.rateLimited(
                 null
             )
         } else {
-            this.call.attributes.put(RateLimitAttributeKey, sha1(rateLimiting.keyProducer(this.call), call.additionalKeyExtractor().toByteArray(), arr))
+            this.call.attributes.put(
+                RateLimitAttributeKey,
+                sha1(rateLimiting.keyProducer(this.call), call.additionalKeyExtractor().toByteArray(), arr)
+            )
         }
     }
     rateLimitedRoute.callback()
@@ -337,7 +336,7 @@ public fun Route.rateLimited(
 }
 
 public suspend fun ApplicationCall.isRateLimited(): Boolean {
-    val rateLimiting = this.application.feature(RateLimit)
+    val rateLimiting = this.application.plugin(RateLimit)
     return rateLimiting.handleRateLimitedCall(
         null,
         null,
