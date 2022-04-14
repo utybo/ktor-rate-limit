@@ -15,17 +15,11 @@
  */
 package guru.zoroark.ratelimit
 
-import io.ktor.application.ApplicationCall
-import io.ktor.application.call
-import io.ktor.application.install
-import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
-import io.ktor.response.respond
-import io.ktor.routing.get
-import io.ktor.routing.routing
-import io.ktor.server.testing.TestApplicationCall
-import io.ktor.server.testing.handleRequest
-import io.ktor.server.testing.withTestApplication
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.server.testing.*
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.ceil
@@ -46,6 +40,39 @@ class RateLimitTest {
             routing {
                 rateLimited {
                     get("/") {
+                        call.respond(HttpStatusCode.OK)
+                    }
+                }
+            }
+        }
+        // Add a second to account for possible lag or delays
+        val max = Instant.now() + resetDur + Duration.ofSeconds(1)
+        repeat(5) { iteration ->
+            handleRequest(HttpMethod.Get, "/").apply {
+                assertRateLimitedHeaders(5, 4L - iteration, max)
+                assertStatus(HttpStatusCode.OK)
+            }
+        }
+
+        handleRequest(HttpMethod.Get, "/").apply {
+            assertStatus(HttpStatusCode.TooManyRequests)
+            assertRateLimitedHeaders(5, 0, max)
+            assertEquals(response.headers["X-RateLimit-Reset-After"]!!, response.headers["Retry-After"])
+        }
+    }
+
+    @Test
+    fun `Test autoRateLimit=false`(): Unit = withTestApplication {
+        val resetDur = Duration.ofMinutes(1)
+        with(application) {
+            install(RateLimit) {
+                limit = 5
+                timeBeforeReset = resetDur
+            }
+            routing {
+                rateLimited(autoRateLimit = false) {
+                    get("/") {
+                        if (call.isRateLimited()) return@get
                         call.respond(HttpStatusCode.OK)
                     }
                 }

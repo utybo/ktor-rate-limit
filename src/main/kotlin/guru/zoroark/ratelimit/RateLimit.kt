@@ -16,25 +16,19 @@
 package guru.zoroark.ratelimit
 
 import guru.zoroark.ratelimit.RateLimit.Configuration
-import io.ktor.application.*
-import io.ktor.features.origin
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.request.ApplicationRequest
-import io.ktor.request.header
-import io.ktor.response.ApplicationResponse
-import io.ktor.response.header
-import io.ktor.response.respondText
-import io.ktor.routing.*
-import io.ktor.util.AttributeKey
-import io.ktor.util.pipeline.PipelineContext
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.plugins.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.util.*
+import io.ktor.util.pipeline.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.time.Duration
 import java.time.Instant
 import java.util.*
 import kotlin.math.ceil
@@ -155,7 +149,7 @@ public class RateLimit(configuration: Configuration) {
          * purge itself (one purge per hour).
          */
         public var limiter: RateLimiter<String> =
-            InMemoryRateLimiter(100, Duration.ofHours(1))
+            InMemoryRateLimiter(100, java.time.Duration.ofHours(1))
 
         /**
          * The default limit (i.e. amount of requests) allowed for per-route
@@ -171,7 +165,7 @@ public class RateLimit(configuration: Configuration) {
          *
          * Default: 2 minutes
          */
-        public var timeBeforeReset: Duration = Duration.ofMinutes(2)
+        public var timeBeforeReset: java.time.Duration = java.time.Duration.ofMinutes(2)
 
         /**
          * This is the function that generates caller keys. The default uses the
@@ -180,20 +174,29 @@ public class RateLimit(configuration: Configuration) {
         public var callerKeyProducer: ApplicationCall.() -> ByteArray = {
             request.origin.remoteHost.toByteArray()
         }
+
+        public var limitMessage: String =
+            """{"message":"You are being rate limited.","retry_after":{{retryAfter}},"global":false}"""
+
+        public var limitHttpStatusCode: HttpStatusCode = HttpStatusCode.TooManyRequests
+        public var limitHttpContentType: ContentType = ContentType.Application.Json
     }
 
     internal val random = SecureRandom()
     private val rateLimiter = configuration.limiter
     private val limit = configuration.limit
     private val timeBeforeReset = configuration.timeBeforeReset.toMillis()
-    private val keyProducer = configuration.callerKeyProducer
+    internal val keyProducer = configuration.callerKeyProducer
+    private val limitMessage = configuration.limitMessage
+    private val limitHttpStatusCode = configuration.limitHttpStatusCode
+    private val limitHttpContentType = configuration.limitHttpContentType
     private val logger = LoggerFactory.getLogger("guru.zoroark.ratelimit")
 
     /**
      * Feature companion object for the rate limiting feature
      */
     public companion object Feature :
-        ApplicationFeature<ApplicationCallPipeline, Configuration, RateLimit> {
+        BaseApplicationPlugin<ApplicationCallPipeline, Configuration, RateLimit> {
         override val key: AttributeKey<RateLimit> = AttributeKey("RateLimit")
 
         override fun install(
@@ -213,11 +216,19 @@ public class RateLimit(configuration: Configuration) {
     internal suspend fun handleRateLimitedCall(
         limit: Long?,
         timeBeforeReset: Long?,
-        context: PipelineContext<Unit, ApplicationCall>,
-        fullKeyProcessor: suspend (ByteArray) -> String
-    ) = with(context.call) {
+        context: PipelineContext<Unit, ApplicationCall>?,
+        call: ApplicationCall,
+        fullKeyProcessor: (suspend (ByteArray) -> String)?,
+        fullKey: String?
+    ): Boolean = with(call) {
         // Initialize values
-        val bucket = fullKeyProcessor(context.call.keyProducer())
+        var bucket = ""
+        if (fullKeyProcessor != null && context != null) {
+            bucket = fullKeyProcessor(context.call.keyProducer())
+        } else if (fullKey != null) {
+            bucket = fullKey
+        }
+
         val actualLimit = limit ?: this@RateLimit.limit
         val actualTimeBeforeReset =
             timeBeforeReset ?: this@RateLimit.timeBeforeReset
@@ -228,7 +239,7 @@ public class RateLimit(configuration: Configuration) {
         // Append information to reply
         val inMillis = request.shouldRateLimitTimeBeInMillis()
         val remainingTimeBeforeReset =
-            Duration.between(Instant.now(), rate.resetAt)
+            java.time.Duration.between(Instant.now(), rate.resetAt)
         response.appendRateLimitHeaders(
             rate,
             inMillis,
@@ -246,20 +257,25 @@ public class RateLimit(configuration: Configuration) {
             // Always in seconds
             response.header(HttpHeaders.RetryAfter, retryAfter)
             respondText(
-                ContentType.Application.Json,
-                HttpStatusCode.TooManyRequests
+                limitHttpContentType,
+                limitHttpStatusCode
             ) {
-                """{"message":"You are being rate limited.","retry_after":$retryAfter,"global":false}"""
+//                """{"message":"You are being rate limited.","retry_after":$retryAfter,"global":false}"""
+                limitMessage.replace("{{retryAfter}}", retryAfter)
             }
-            context.finish()
+            context?.finish()
+            return true
         } else {
             logger.debug {
                 "Bucket $bucket (remote host ${request.origin.remoteHost}) passes rate limit, remaining = ${rate.remainingRequests - 1}, resets at ${rate.resetAt}"
             }
-            context.proceed()
+            context?.proceed()
+            return false
         }
     }
 }
+
+internal val RateLimitAttributeKey: AttributeKey<String> = AttributeKey("RateLimitAttributeKey")
 
 /**
  * Intercepts every call made inside the route block and adds rate-limiting to it.
@@ -279,8 +295,9 @@ public class RateLimit(configuration: Configuration) {
  */
 public fun Route.rateLimited(
     limit: Long? = null,
-    timeBeforeReset: Duration? = null,
+    timeBeforeReset: java.time.Duration? = null,
     additionalKeyExtractor: ApplicationCall.() -> String = { "" },
+    autoRateLimit: Boolean = true,
     callback: Route.() -> Unit
 ): Route {
     // Create the route
@@ -292,23 +309,42 @@ public fun Route.rateLimited(
             RouteSelectorEvaluation.Constant
     })
     // Rate limiting feature object
-    val rateLimiting = application.feature(RateLimit)
+    val rateLimiting = application.plugin(RateLimit)
     // Generate a key for this route
     val arr = ByteArray(64)
     rateLimiting.random.nextBytes(arr)
     // Intercepting every call and checking the rate limit
-    rateLimitedRoute.intercept(ApplicationCallPipeline.Features) {
-        rateLimiting.handleRateLimitedCall(
-            limit,
-            timeBeforeReset?.toMillis(),
-            this
-        ) {
-            // This is the key generation. We simply SHA1 together all three keys.
-            sha1(it, call.additionalKeyExtractor().toByteArray(), arr)
+    rateLimitedRoute.intercept(ApplicationCallPipeline.Plugins) {
+        if (autoRateLimit) {
+            rateLimiting.handleRateLimitedCall(
+                limit,
+                timeBeforeReset?.toMillis(),
+                this,
+                this.call,
+                { sha1(it, call.additionalKeyExtractor().toByteArray(), arr) },
+                null
+            )
+        } else {
+            this.call.attributes.put(
+                RateLimitAttributeKey,
+                sha1(rateLimiting.keyProducer(this.call), call.additionalKeyExtractor().toByteArray(), arr)
+            )
         }
     }
     rateLimitedRoute.callback()
     return rateLimitedRoute
+}
+
+public suspend fun ApplicationCall.isRateLimited(): Boolean {
+    val rateLimiting = this.application.plugin(RateLimit)
+    return rateLimiting.handleRateLimitedCall(
+        null,
+        null,
+        null,
+        this,
+        null,
+        this.attributes[RateLimitAttributeKey]
+    )
 }
 
 /**
@@ -323,7 +359,7 @@ private fun ApplicationRequest.shouldRateLimitTimeBeInMillis(): Boolean =
 private fun ApplicationResponse.appendRateLimitHeaders(
     rate: Rate,
     inMillis: Boolean,
-    remainingTimeBeforeReset: Duration,
+    remainingTimeBeforeReset: java.time.Duration,
     context: RateLimitingContext,
     bucket: String
 ) {
