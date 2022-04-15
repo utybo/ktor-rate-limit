@@ -60,9 +60,15 @@ public final class guru/zoroark/ratelimit/RateLimitHeaders {
 	public static final field ResetAfter Ljava/lang/String;
 }
 
+public final class guru/zoroark/ratelimit/RateLimitInterceptorKt {
+	public static final fun getRateLimitInterceptor ()Lio/ktor/server/application/RouteScopedPlugin;
+}
+
 public final class guru/zoroark/ratelimit/RateLimitKt {
 	public static final fun getRateLimit ()Lio/ktor/server/application/ApplicationPlugin;
-	public static final fun getRateLimitInterceptor ()Lio/ktor/server/application/RouteScopedPlugin;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitRouteKt {
 	public static final fun rateLimited (Lio/ktor/server/routing/Route;Ljava/lang/Long;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Lio/ktor/server/routing/Route;
 	public static synthetic fun rateLimited$default (Lio/ktor/server/routing/Route;Ljava/lang/Long;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/ktor/server/routing/Route;
 }

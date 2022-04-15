@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.ceil
+import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -264,12 +265,17 @@ class RateLimitTest {
                 }
             }
         }
-        repeat(100) {
-            client.get("/$it").apply {
-                assertStatus(HttpStatusCode.OK)
+        val callsMillis = measureTimeMillis {
+            repeat(100) {
+                client.get("/$it").apply {
+                    assertStatus(HttpStatusCode.OK)
+                }
             }
         }
-        assertTrue(limiter.internalMapSize > 40, "Internal map size is ${limiter.internalMapSize}")
+        assertTrue(
+            limiter.internalMapSize > 20,
+            "Internal map size is ${limiter.internalMapSize} (may be lag? took $callsMillis ms)"
+        )
         delay(400)
         client.get("/1").apply {
             assertStatus(HttpStatusCode.OK)

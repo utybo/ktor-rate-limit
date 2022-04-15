@@ -15,41 +15,18 @@
  */
 package guru.zoroark.ratelimit
 
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.ApplicationCallPipeline.ApplicationPhase.Plugins
 import io.ktor.server.application.ApplicationPlugin
 import io.ktor.server.application.Hook
-import io.ktor.server.application.RouteScopedPlugin
-import io.ktor.server.application.application
 import io.ktor.server.application.call
 import io.ktor.server.application.createApplicationPlugin
-import io.ktor.server.application.createRouteScopedPlugin
-import io.ktor.server.application.install
 import io.ktor.server.plugins.origin
-import io.ktor.server.request.ApplicationRequest
-import io.ktor.server.request.header
-import io.ktor.server.response.ApplicationResponse
-import io.ktor.server.response.header
-import io.ktor.server.response.respondText
-import io.ktor.server.routing.Route
-import io.ktor.server.routing.RouteSelector
-import io.ktor.server.routing.RouteSelectorEvaluation
-import io.ktor.server.routing.RoutingResolveContext
-import io.ktor.server.routing.application
 import io.ktor.util.AttributeKey
 import io.ktor.util.pipeline.PipelineContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
-import java.time.Instant
-import java.util.Base64
 import kotlin.properties.Delegates
 
 private const val DEFAULT_IN_MEMORY_RATE_LIMITER_PURGE_SIZE = 100
@@ -187,8 +164,6 @@ public val RateLimit: ApplicationPlugin<RateLimitConfiguration> = createApplicat
     application.attributes.put(RateLimitGlobalContext.key, context)
 }
 
-private val logger = LoggerFactory.getLogger("guru.zoroark.ratelimit")
-
 public class RouteRateLimitConfiguration {
     public lateinit var routeKey: ByteArray
     public var limit: Long by Delegates.notNull()
@@ -204,172 +179,3 @@ internal object RateLimitHook : Hook<suspend PipelineContext<Unit, ApplicationCa
         pipeline.intercept(Plugins) { handler(call) }
     }
 }
-
-public val RateLimitInterceptor: RouteScopedPlugin<RouteRateLimitConfiguration> = createRouteScopedPlugin(
-    "RateLimitInterceptor", ::RouteRateLimitConfiguration
-) {
-    val routeKey = requireNotNull(pluginConfig.routeKey) { "Internal error: route key must be set" }
-    val routeConfig = pluginConfig
-    on(RateLimitHook) { call ->
-        val globalContext = application.attributes[RateLimitGlobalContext.key]
-        // This is the key generation. We simply SHA1 together all three keys.
-        val bucket = sha1(
-            globalContext.callerKeyProducer(call),
-            routeConfig.additionalKeyExtractor(call).toByteArray(),
-            routeKey
-        )
-
-        val actualLimit = routeConfig.limit
-        val actualTimeBeforeReset = routeConfig.timeBeforeReset
-        val rateContext = RateLimitingContext(actualLimit, actualTimeBeforeReset)
-
-        // Handle the rate limit
-        val rate = globalContext.limiter.handle(rateContext, bucket)
-
-        // Append information to reply
-        val inMillis = call.request.shouldRateLimitTimeBeInMillis()
-        val remainingTimeBeforeReset =
-            Duration.between(Instant.now(), rate.resetAt)
-        call.response.appendRateLimitHeaders(
-            rate,
-            inMillis,
-            remainingTimeBeforeReset,
-            rateContext,
-            bucket
-        )
-
-        // Interrupt call if we should limit it
-        if (rate.shouldLimit()) {
-            logger.debug {
-                "Bucket $bucket (remote host ${call.request.origin.remoteHost}) is being rate limited, " +
-                    "resets at ${rate.resetAt}"
-            }
-            val retryAfter = toSecondsStringWithOptionalDecimals(
-                false,
-                remainingTimeBeforeReset
-            )
-            call.response.header(HttpHeaders.RetryAfter, retryAfter) // Always in seconds
-            call.respondText(
-                ContentType.Application.Json,
-                HttpStatusCode.TooManyRequests
-            ) {
-                """{"message":"You are being rate limited.","retry_after":$retryAfter,"global":false}"""
-            }
-            finish()
-        } else {
-            logger.debug {
-                "Bucket $bucket (remote host ${call.request.origin.remoteHost}) passes rate limit, " +
-                    "remaining = ${rate.remainingRequests - 1}, resets at ${rate.resetAt}"
-            }
-            proceed()
-        }
-    }
-}
-
-private const val ROUTE_KEY_BYTE_ARRAY_SIZE = 64
-
-/**
- * Intercepts every call made inside the route block and adds rate-limiting to it.
- *
- * This function requires the [RateLimit] feature to be installed.
- *
- * Optionally, you can override some parameters that will only apply to this route.
- *
- * @param limit Overrides the global limit set when configuring the feature.
- * Maximum amount of requests that can be performed before being rate-limited
- * and receiving HTTP 429 errors.
- * @param timeBeforeReset Overrides the global time before reset set when
- * configuring the feature. Time before a rate-limit expires.
- * @param additionalKeyExtractor Function used for retrieving the additional
- * key. See [RateLimit] for more information.
- * @param callback Block for configuring the rate-limited route
- */
-public fun Route.rateLimited(
-    limit: Long? = null,
-    timeBeforeReset: Duration? = null,
-    additionalKeyExtractor: ApplicationCall.() -> String = { "" },
-    callback: Route.() -> Unit
-): Route {
-    // Create the route
-    val rateLimitedRoute = createChild(RateLimitedRouteSelector())
-    val globalContext =
-        application.attributes.getOrNull(RateLimitGlobalContext.key) ?: error("RateLimit feature is not installed")
-
-    val arr = ByteArray(ROUTE_KEY_BYTE_ARRAY_SIZE)
-    globalContext.random.nextBytes(arr)
-    rateLimitedRoute.install(RateLimitInterceptor) {
-        routeKey = arr
-        this.limit = limit ?: globalContext.limit
-        this.timeBeforeReset = timeBeforeReset?.toMillis() ?: globalContext.timeBeforeReset
-        this.additionalKeyExtractor = additionalKeyExtractor
-    }
-
-    callback(rateLimitedRoute)
-
-    return rateLimitedRoute
-}
-
-public class RateLimitedRouteSelector : RouteSelector() {
-    override fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation {
-        return RouteSelectorEvaluation.Transparent
-    }
-
-    override fun toString(): String {
-        return "(rate limited)"
-    }
-}
-
-/**
- * Shortcut function for checking if the precision of the rate limit should be in milliseconds (true) or seconds (false)
- */
-private fun ApplicationRequest.shouldRateLimitTimeBeInMillis(): Boolean =
-    header(RateLimitHeaders.Precision) == "millisecond"
-
-/**
- * Appends rate-limiting related headers to the response
- */
-private fun ApplicationResponse.appendRateLimitHeaders(
-    rate: Rate,
-    withDecimal: Boolean,
-    remainingTimeBeforeReset: Duration,
-    context: RateLimitingContext,
-    bucket: String
-) {
-    header(RateLimitHeaders.Limit, context.limit)
-    header(
-        RateLimitHeaders.Remaining,
-        (rate.remainingRequests - 1).coerceAtLeast(0)
-    )
-    header(
-        RateLimitHeaders.Reset,
-        toSecondsStringWithOptionalDecimals(withDecimal, Duration.ofMillis(rate.resetAt.toEpochMilli()))
-    )
-    header(
-        RateLimitHeaders.ResetAfter,
-        toSecondsStringWithOptionalDecimals(withDecimal, remainingTimeBeforeReset)
-    )
-    header(RateLimitHeaders.Bucket, bucket)
-}
-
-private const val MILLIS_IN_ONE_SECOND = 1000L
-
-/**
- * Turns [duration] into either seconds (integer) if [withDecimal] is false or seconds with milliseconds precision
- * (double) if [withDecimal] is true and convert them to a String.
- */
-private fun toSecondsStringWithOptionalDecimals(
-    withDecimal: Boolean,
-    duration: Duration
-): String =
-    if (withDecimal) (duration.seconds + (duration.toMillisPart() / MILLIS_IN_ONE_SECOND)).toString()
-    else duration.toSeconds().toString()
-
-/**
- * Creates a Base 64 string from SHA-1'ing all of the arrays, treating them as a single byte array
- */
-private suspend fun sha1(vararg arr: ByteArray): String =
-    withContext(Dispatchers.Default) {
-        val md = MessageDigest.getInstance("SHA-1")
-        arr.forEach { md.update(it) }
-        Base64.getEncoder().encodeToString(md.digest())
-    }
