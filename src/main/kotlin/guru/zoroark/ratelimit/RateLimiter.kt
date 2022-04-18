@@ -15,8 +15,13 @@
  */
 package guru.zoroark.ratelimit
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
@@ -54,30 +59,34 @@ public class InMemoryRateLimiter(
     private val mapPurgeWaitDuration: Duration
 ) : RateLimiter<String> {
     private val scope =
-        CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, ex ->
-            logger.error(
-                "Uncaught exception in in-memory rate limiter storage",
-                ex
-            )
-        })
+        CoroutineScope(
+            Dispatchers.Default +
+                SupervisorJob() +
+                CoroutineExceptionHandler { _, ex ->
+                    logger.error(
+                        "Uncaught exception in in-memory rate limiter storage", ex
+                    )
+                }
+        )
+
     private val mutex = Mutex()
     private val isPurgeRunning = AtomicBoolean(false)
     private var lastPurgeTime = Instant.now()
     private val map = ConcurrentHashMap<String, Rate>()
-    private val logger =
-        LoggerFactory.getLogger("guru.zoroark.ratelimit.inmemory")
+    private val logger = LoggerFactory.getLogger("guru.zoroark.ratelimit.inmemory")
 
-    override suspend fun handle(ctx: RateLimitingContext, key: String): Rate =
-        withContext(Dispatchers.Default) {
-            map.compute(key) { _, v ->
-                when {
-                    v == null -> ctx.newRate()
-                    v.hasExpired() -> ctx.newRate()
-                        .also { logger.debug { "Bucket $key has expired, reset" } }
-                    else -> v.consume()
-                }
-            }!!.also { launchPurgeIfNeeded() }
-        }
+    public val internalMapSize: Int
+        get() = map.size
+
+    override suspend fun handle(ctx: RateLimitingContext, key: String): Rate = withContext(Dispatchers.Default) {
+        map.compute(key) { _, v ->
+            when {
+                v == null -> ctx.newRate()
+                v.hasExpired() -> ctx.newRate().also { logger.debug { "Bucket $key has expired, reset" } }
+                else -> v.consume()
+            }
+        }!!.also { launchPurgeIfNeeded() }
+    }
 
     private fun launchPurgeIfNeeded() {
         logger.debug { "Should purge: ${shouldPurge()}" }
@@ -102,8 +111,5 @@ public class InMemoryRateLimiter(
     }
 
     private fun shouldPurge() =
-        map.size > mapPurgeSize && Duration.between(
-            lastPurgeTime,
-            Instant.now()
-        ) > mapPurgeWaitDuration
+        map.size > mapPurgeSize && Duration.between(lastPurgeTime, Instant.now()) > mapPurgeWaitDuration
 }

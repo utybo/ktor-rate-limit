@@ -1,0 +1,109 @@
+public final class guru/zoroark/ratelimit/InMemoryRateLimiter : guru/zoroark/ratelimit/RateLimiter {
+	public fun <init> (ILjava/time/Duration;)V
+	public final fun getInternalMapSize ()I
+	public synthetic fun handle (Lguru/zoroark/ratelimit/RateLimitingContext;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun handle (Lguru/zoroark/ratelimit/RateLimitingContext;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class guru/zoroark/ratelimit/Rate {
+	public fun <init> (JLjava/time/Instant;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/time/Instant;
+	public final fun copy (JLjava/time/Instant;)Lguru/zoroark/ratelimit/Rate;
+	public static synthetic fun copy$default (Lguru/zoroark/ratelimit/Rate;JLjava/time/Instant;ILjava/lang/Object;)Lguru/zoroark/ratelimit/Rate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRemainingRequests ()J
+	public final fun getResetAt ()Ljava/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class guru/zoroark/ratelimit/RateKt {
+	public static final fun consume (Lguru/zoroark/ratelimit/Rate;)Lguru/zoroark/ratelimit/Rate;
+	public static final fun hasExpired (Lguru/zoroark/ratelimit/Rate;)Z
+	public static final fun shouldLimit (Lguru/zoroark/ratelimit/Rate;)Z
+}
+
+public final class guru/zoroark/ratelimit/RateLimitConfiguration {
+	public fun <init> ()V
+	public final fun getCallerKeyProducer ()Lkotlin/jvm/functions/Function1;
+	public final fun getLimit ()J
+	public final fun getLimiter ()Lguru/zoroark/ratelimit/RateLimiter;
+	public final fun getTimeBeforeReset ()Ljava/time/Duration;
+	public final fun setCallerKeyProducer (Lkotlin/jvm/functions/Function1;)V
+	public final fun setLimit (J)V
+	public final fun setLimiter (Lguru/zoroark/ratelimit/RateLimiter;)V
+	public final fun setTimeBeforeReset (Ljava/time/Duration;)V
+}
+
+public final class guru/zoroark/ratelimit/RateLimitGlobalContext {
+	public static final field Companion Lguru/zoroark/ratelimit/RateLimitGlobalContext$Companion;
+	public fun <init> (Lguru/zoroark/ratelimit/RateLimiter;JJLkotlin/jvm/functions/Function1;Ljava/security/SecureRandom;)V
+	public final fun getCallerKeyProducer ()Lkotlin/jvm/functions/Function1;
+	public final fun getLimit ()J
+	public final fun getLimiter ()Lguru/zoroark/ratelimit/RateLimiter;
+	public final fun getRandom ()Ljava/security/SecureRandom;
+	public final fun getTimeBeforeReset ()J
+}
+
+public final class guru/zoroark/ratelimit/RateLimitGlobalContext$Companion {
+	public final fun getKey ()Lio/ktor/util/AttributeKey;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitHeaders {
+	public static final field Bucket Ljava/lang/String;
+	public static final field INSTANCE Lguru/zoroark/ratelimit/RateLimitHeaders;
+	public static final field Limit Ljava/lang/String;
+	public static final field Precision Ljava/lang/String;
+	public static final field Remaining Ljava/lang/String;
+	public static final field Reset Ljava/lang/String;
+	public static final field ResetAfter Ljava/lang/String;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitKt {
+	public static final fun getRateLimit ()Lio/ktor/server/application/ApplicationPlugin;
+	public static final fun getRateLimitInterceptor ()Lio/ktor/server/application/RouteScopedPlugin;
+	public static final fun rateLimited (Lio/ktor/server/routing/Route;Ljava/lang/Long;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Lio/ktor/server/routing/Route;
+	public static synthetic fun rateLimited$default (Lio/ktor/server/routing/Route;Ljava/lang/Long;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/ktor/server/routing/Route;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitedRouteSelector : io/ktor/server/routing/RouteSelector {
+	public fun <init> ()V
+	public fun evaluate (Lio/ktor/server/routing/RoutingResolveContext;I)Lio/ktor/server/routing/RouteSelectorEvaluation;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class guru/zoroark/ratelimit/RateLimiter {
+	public abstract fun handle (Lguru/zoroark/ratelimit/RateLimitingContext;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitingContext {
+	public fun <init> (JJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun copy (JJ)Lguru/zoroark/ratelimit/RateLimitingContext;
+	public static synthetic fun copy$default (Lguru/zoroark/ratelimit/RateLimitingContext;JJILjava/lang/Object;)Lguru/zoroark/ratelimit/RateLimitingContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLimit ()J
+	public final fun getResetTime ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class guru/zoroark/ratelimit/RateLimitingContextKt {
+	public static final fun newRate (Lguru/zoroark/ratelimit/RateLimitingContext;)Lguru/zoroark/ratelimit/Rate;
+}
+
+public final class guru/zoroark/ratelimit/RouteRateLimitConfiguration {
+	public field routeKey [B
+	public fun <init> ()V
+	public final fun getAdditionalKeyExtractor ()Lkotlin/jvm/functions/Function1;
+	public final fun getLimit ()J
+	public final fun getRouteKey ()[B
+	public final fun getTimeBeforeReset ()J
+	public final fun setAdditionalKeyExtractor (Lkotlin/jvm/functions/Function1;)V
+	public final fun setLimit (J)V
+	public final fun setRouteKey ([B)V
+	public final fun setTimeBeforeReset (J)V
+}
+
