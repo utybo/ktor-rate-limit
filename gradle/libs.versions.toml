@@ -1,0 +1,30 @@
+[versions]
+kotlin = "1.6.20"
+ktor = "2.0.0"
+slf4j = "1.7.36"
+junit = "5.8.2"
+license = "0.16.1"
+versions = "0.42.0"
+coroutines = "1.6.1"
+bcv = "0.8.0"
+detekt = "1.19.0"
+
+[libraries]
+kotlin-jdk8 = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+ktor-server-testHost = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
+
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+
+[plugins]
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+license = { id = "com.github.hierynomus.license", version.ref = "license" }
+versions = { id = "com.github.ben-manes.versions", version.ref = "versions" }
+bcv = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "bcv" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

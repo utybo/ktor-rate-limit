@@ -16,17 +16,26 @@
 package guru.zoroark.ratelimit
 
 import guru.zoroark.ratelimit.RateLimit.Configuration
-import io.ktor.application.*
-import io.ktor.features.origin
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.request.ApplicationRequest
-import io.ktor.request.header
-import io.ktor.response.ApplicationResponse
-import io.ktor.response.header
-import io.ktor.response.respondText
-import io.ktor.routing.*
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.ApplicationCallPipeline.ApplicationPhase.Plugins
+import io.ktor.server.application.Plugin
+import io.ktor.server.application.call
+import io.ktor.server.application.plugin
+import io.ktor.server.plugins.origin
+import io.ktor.server.request.ApplicationRequest
+import io.ktor.server.request.header
+import io.ktor.server.response.ApplicationResponse
+import io.ktor.server.response.header
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.RouteSelector
+import io.ktor.server.routing.RouteSelectorEvaluation
+import io.ktor.server.routing.RoutingResolveContext
+import io.ktor.server.routing.application
 import io.ktor.util.AttributeKey
 import io.ktor.util.pipeline.PipelineContext
 import kotlinx.coroutines.Dispatchers
@@ -36,14 +45,14 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
-import java.util.*
+import java.util.Base64
 import kotlin.math.ceil
 
 /**
  * This feature implements rate limiting functionality.
  *
  * Rate limiting is when an API will only allow a certain number of calls be
- * made during a certain amount of time. This feature implements this behavior.
+ * made during a certain amount of time. This plugin implements this behavior.
  * Rate limiting can be done on a per-route basis, meaning that different routes
  * may have different rate limits and be timed differently.
  *
@@ -53,7 +62,7 @@ import kotlin.math.ceil
  * **seconds**, not milliseconds.
  * [Discord's implementation does not follow standards](https://github.com/discord/discord-api-docs/issues/1463).
  *
- * This feature by itself does not limit anything, you need to define which
+ * This plugin by itself does not limit anything, you need to define which
  * routes are rate limited using the [rateLimited] function. For example:
  *
  * ```
@@ -87,7 +96,7 @@ import kotlin.math.ceil
  * All of these keys are SHA-1'd together and turned into a Base 64 string: that
  * is the bucket we return.
  *
- * When rate-limited, this feature will end the pipeline immediately, returning
+ * When rate-limited, this plugin will end the pipeline immediately, returning
  * a HTTP 429 error with a JSON object.
  *
  * ```
@@ -106,7 +115,7 @@ import kotlin.math.ceil
 public class RateLimit(configuration: Configuration) {
 
     /**
-     * The (non-standard) headers used by the rate limiting features. The names
+     * The (non-standard) headers used by the rate limiting plugins. The names
      * are identical to the ones used by Discord.
      */
     public object Headers {
@@ -143,7 +152,7 @@ public class RateLimit(configuration: Configuration) {
     }
 
     /**
-     * Configuration class for the Rate Limiting feature
+     * Configuration class for the Rate Limiting plugin
      */
     public class Configuration {
         /**
@@ -190,10 +199,10 @@ public class RateLimit(configuration: Configuration) {
     private val logger = LoggerFactory.getLogger("guru.zoroark.ratelimit")
 
     /**
-     * Feature companion object for the rate limiting feature
+     * plugin companion object for the rate limiting plugin
      */
-    public companion object Feature :
-        ApplicationFeature<ApplicationCallPipeline, Configuration, RateLimit> {
+    public companion object :
+        Plugin<ApplicationCallPipeline, Configuration, RateLimit> {
         override val key: AttributeKey<RateLimit> = AttributeKey("RateLimit")
 
         override fun install(
@@ -292,12 +301,12 @@ public fun Route.rateLimited(
             RouteSelectorEvaluation.Constant
     })
     // Rate limiting feature object
-    val rateLimiting = application.feature(RateLimit)
+    val rateLimiting = application.plugin(RateLimit)
     // Generate a key for this route
     val arr = ByteArray(64)
     rateLimiting.random.nextBytes(arr)
     // Intercepting every call and checking the rate limit
-    rateLimitedRoute.intercept(ApplicationCallPipeline.Features) {
+    rateLimitedRoute.intercept(Plugins) {
         rateLimiting.handleRateLimitedCall(
             limit,
             timeBeforeReset?.toMillis(),
