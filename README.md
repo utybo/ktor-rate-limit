@@ -1,5 +1,11 @@
 # ktor-rate-limit
 
+## Deprecation notice
+
+**This library is deprecated.** Ktor now has built-in support for rate-limiting, so this library is no longer useful. It will be updated for Ktor 2 for migration purposes - please move to Ktor's own implementation.
+
+## Introduction
+
 A rate-limiting feature for Ktor servers.
 
 ```kotlin
@@ -9,8 +15,8 @@ routing {
     rateLimited {
         // Rate limits apply to these routes
         get("/limited") {
-            // ...            
-        }       
+            // ...
+        }
     }
 }
 ```
